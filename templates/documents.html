@@ -1,0 +1,57 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Document collection · Local Qwen Chat</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=2) }}">
+</head>
+<body>
+  <main class="documents-shell">
+    <header>
+      <div class="model-mark" aria-hidden="true">Q</div>
+      <div><h1>Document collection</h1><p>Upload and manage the files you want to keep with your collection.</p></div>
+      <span class="local-badge">LOCAL</span>
+    </header>
+    {% set active_page = "documents" %}{% include "_nav.html" %}
+    <div class="documents-content">
+      {% if success %}<p class="notice success" role="status">{{ success }}</p>{% endif %}
+      {% if error %}<p class="notice error" role="alert">{{ error }}</p>{% endif %}
+
+      <section class="document-card">
+        <h2>Add documents</h2>
+        <form action="{{ url_for('upload_document') }}" method="post" enctype="multipart/form-data" class="upload-form">
+          <label class="file-picker" for="document-file"><span id="file-name">Choose a file</span><input id="document-file" type="file" name="file" accept=".pdf,.docx,.txt,.md" required></label>
+          <button type="submit">Add documents</button>
+        </form>
+        <p class="size-note">PDF, DOCX, TXT, or Markdown. Maximum size: 50 MB. Uploads are indexed locally for chat.</p>
+      </section>
+
+      <section class="document-card files-card">
+        <div class="files-heading"><h2>Your files</h2><span>{{ files|length }} {% if files|length == 1 %}file{% else %}files{% endif %}</span></div>
+        {% if files %}
+          <ul class="file-list">
+            {% for file in files %}
+              <li class="file-row">
+                <div class="file-icon" aria-hidden="true">▤</div>
+                <div class="file-details"><a class="file-name" href="{{ url_for('open_document', filename=file.name) }}" target="_blank" rel="noopener">{{ file.name }}</a><span class="file-size">{{ file.size }}</span><span class="file-size">{% if file.indexed %}Indexed · {{ file.chunk_count }} chunks{% else %}Not indexed{% endif %}</span></div>
+                <form action="{{ url_for('delete_document', filename=file.name) }}" method="post" onsubmit="return confirm('Delete {{ file.name|e }}?')">
+                  <button class="delete-button" type="submit">Delete</button>
+                </form>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="empty-files">No files yet. Upload a document to start your collection.</p>
+        {% endif %}
+      </section>
+    </div>
+  </main>
+  <script>
+    document.querySelector("#document-file").addEventListener("change", (event) => {
+      document.querySelector("#file-name").textContent = event.target.files[0]?.name || "Choose a file";
+    });
+  </script>
+</body>
+</html>
+

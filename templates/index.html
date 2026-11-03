@@ -1,0 +1,32 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chat with Qwen 3</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=2) }}">
+</head>
+<body>
+  <main class="chat-shell">
+    <header>
+      <div class="model-mark" aria-hidden="true">Q</div>
+      <div><h1>Chat with Qwen 3</h1><p>qwen3:1.7b · document retrieval · web search</p></div>
+      <span class="local-badge">LOCAL</span>
+    </header>
+    {% set active_page = "chat" %}{% include "_nav.html" %}
+    <p id="chat-notice" class="chat-notice" role="status" hidden></p>
+    <section id="conversation" class="conversation" aria-live="polite" aria-label="Conversation">
+      <div class="welcome"><span class="welcome-icon">✦</span><h2>What’s on your mind?</h2><p>Your conversation runs through your local Ollama model.</p></div>
+    </section>
+    <form id="chat-form" class="composer">
+      <label class="sr-only" for="message-input">Your message</label>
+      <textarea id="message-input" rows="1" placeholder="Message Qwen…" required></textarea>
+      <button id="send-button" type="submit" aria-label="Send message"><span>Send</span><span aria-hidden="true">↑</span></button>
+    </form>
+    <p class="footnote">Chat runs locally with qwen3:1.7b. Web search uses Ollama when needed.</p>
+  </main>
+  <script src="{{ url_for('static', filename='chat.js') }}" defer></script>
+</body>
+</html>
+
+

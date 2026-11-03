@@ -1,0 +1,4 @@
+﻿<nav class="page-nav" aria-label="Main navigation">
+  <a href="{{ url_for('index') }}" {% if active_page == 'chat' %}aria-current="page"{% endif %}>Chat</a>
+  <a href="{{ url_for('documents') }}" {% if active_page == 'documents' %}aria-current="page"{% endif %}>Document collection</a>
+</nav>
