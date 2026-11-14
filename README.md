@@ -26,10 +26,12 @@ On Windows, use `py app.py` if `python` is unavailable. Open <http://127.0.0.1:5
 
 ## Report collection
 
-The **Document collection** page accepts PDF, DOCX, TXT, and Markdown files up to 50 MB. Text is split into 800-character chunks with 100-character overlap and embedded locally through Ollama. The index is stored in `index/index.json`; uploaded files are stored in `uploads/`.
+The **Document collection** page combines repository-shared reports from `shared_documents/` with each user's local uploads in `uploads/`. Reports in `shared_documents/` are included in the repository so teammates can use them after cloning or downloading the project. Files uploaded through the app stay local and are excluded from Git.
+
+PDF, DOCX, TXT, and Markdown files up to 50 MB are supported. Text is split into 800-character chunks with 100-character overlap and embedded locally through Ollama. The index is stored in `index/index.json` and is regenerated on each user's machine from both shared and local files. Shared reports appear as read-only in the collection; local uploads can be deleted there.
 
 PDF chunks keep their page number for citations and the recommendation's **Sources used** disclosure. Other supported formats do not provide reliable page numbers, so citations identify the report without a page. Recommendations retrieve up to eight chunks, with at most two chunks from each numbered report page.
 
-Existing uploaded reports do not need to be uploaded again. The next document page visit or chat request automatically reindexes old entries to add page metadata. This requires Ollama and `nomic-embed-text` to be available; large collections may take time to reindex. Existing documents remain stored locally.
+Existing reports do not need to be uploaded again. The next document page visit or chat request automatically indexes/reindexes them on that machine. This requires Ollama and `nomic-embed-text` to be available; large collections may take time to process.
 
 The browser keeps the conversation and selected-answer profile for the current page session. Recommendation search uses up to three profile-based queries, removes duplicate chunks, limits numbered pages to two chunks, and sends up to ten excerpts to the chat model. No API key is required or stored by the app.

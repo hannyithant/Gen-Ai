@@ -24,20 +24,18 @@
           <label class="file-picker" for="document-file"><span id="file-name">Choose a file</span><input id="document-file" type="file" name="file" accept=".pdf,.docx,.txt,.md" required></label>
           <button type="submit">Add documents</button>
         </form>
-        <p class="size-note">PDF, DOCX, TXT, or Markdown. Maximum size: 50 MB. Uploads are indexed locally for chat.</p>
+        <p class="size-note">PDF, DOCX, TXT, or Markdown. Maximum size: 50 MB. Your uploads stay local to this app copy; shared reports are available to everyone using the repository version.</p>
       </section>
 
       <section class="document-card files-card">
-        <div class="files-heading"><h2>Your files</h2><span>{{ files|length }} {% if files|length == 1 %}file{% else %}files{% endif %}</span></div>
+        <div class="files-heading"><h2>Available reports</h2><span>{{ files|length }} {% if files|length == 1 %}file{% else %}files{% endif %}</span></div>
         {% if files %}
           <ul class="file-list">
             {% for file in files %}
               <li class="file-row">
                 <div class="file-icon" aria-hidden="true">▤</div>
-                <div class="file-details"><a class="file-name" href="{{ url_for('open_document', filename=file.name) }}" target="_blank" rel="noopener">{{ file.name }}</a><span class="file-size">{{ file.size }}</span><span class="file-size">{% if file.indexed %}Indexed · {{ file.chunk_count }} chunks{% else %}Not indexed{% endif %}</span></div>
-                <form action="{{ url_for('delete_document', filename=file.name) }}" method="post" onsubmit="return confirm('Delete {{ file.name|e }}?')">
-                  <button class="delete-button" type="submit">Delete</button>
-                </form>
+                <div class="file-details"><a class="file-name" href="{{ url_for('open_document', filename=file.name, source=file.source) }}" target="_blank" rel="noopener">{{ file.name }}</a><span class="file-size">{{ file.size }} · {% if file.source == 'shared' %}Shared report{% else %}Your upload{% endif %}</span><span class="file-size">{% if file.indexed %}Indexed · {{ file.chunk_count }} chunks{% else %}Not indexed{% endif %}</span></div>
+                {% if file.source == 'local' %}<form action="{{ url_for('delete_document', filename=file.name, source='local') }}" method="post" onsubmit="return confirm('Delete {{ file.name|e }}?')"><button class="delete-button" type="submit">Delete</button></form>{% endif %}
               </li>
             {% endfor %}
           </ul>

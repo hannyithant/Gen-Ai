@@ -35,6 +35,7 @@ SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md"}
 PROJECT_DIR = Path(__file__).resolve().parent
 QUESTIONS_PATH = PROJECT_DIR / "questions.json"
 UPLOAD_DIR = PROJECT_DIR / "uploads"
+SHARED_DOCUMENT_DIR = PROJECT_DIR / "shared_documents"
 INDEX_DIR = PROJECT_DIR / "index"
 INDEX_PATH = INDEX_DIR / "index.json"
 INDEX_LOCK = threading.RLock()
@@ -86,6 +87,7 @@ def save_index(index):
 
 def render_documents(success=None, error=None, status=200):
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    SHARED_DOCUMENT_DIR.mkdir(parents=True, exist_ok=True)
     try:
         indexed_documents = load_index()["documents"]
     except DocumentIndexError as exc:
@@ -93,18 +95,20 @@ def render_documents(success=None, error=None, status=200):
         error = error or str(exc)
         status = max(status, 500)
     files = []
-    for path in UPLOAD_DIR.iterdir():
-        if path.is_file():
-            size = path.stat().st_size
-            display_size = f"{size / (1024 * 1024):.1f} MB" if size >= 1024 * 1024 else f"{size / 1024:.1f} KB"
-            record = indexed_documents.get(path.name)
-            files.append({
-                "name": path.name,
-                "size": display_size,
-                "indexed": isinstance(record, dict),
-                "chunk_count": len(record.get("chunks", [])) if isinstance(record, dict) else 0,
-            })
-    files.sort(key=lambda item: item["name"].lower())
+    for source, folder in (("shared", SHARED_DOCUMENT_DIR), ("local", UPLOAD_DIR)):
+        for path in folder.iterdir():
+            if path.is_file():
+                size = path.stat().st_size
+                display_size = f"{size / (1024 * 1024):.1f} MB" if size >= 1024 * 1024 else f"{size / 1024:.1f} KB"
+                record = indexed_documents.get(f"{source}/{path.name}")
+                files.append({
+                    "name": path.name,
+                    "source": source,
+                    "size": display_size,
+                    "indexed": isinstance(record, dict),
+                    "chunk_count": len(record.get("chunks", [])) if isinstance(record, dict) else 0,
+                })
+    files.sort(key=lambda item: (item["name"].lower(), item["source"]))
     return render_template("documents.html", files=files, success=success, error=error, app_name=APP_NAME), status
 
 
@@ -209,6 +213,7 @@ def prepare_index_record(path):
     vectors = create_embeddings([chunk for _page, chunk in chunks])
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     return {
+        "name": path.name,
         "sha256": digest,
         "version": INDEX_VERSION,
         "chunks": [{"text": chunk, "page": page, "embedding": vector} for (page, chunk), vector in zip(chunks, vectors)],
@@ -217,37 +222,46 @@ def prepare_index_record(path):
 
 def ensure_existing_documents_indexed():
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    SHARED_DOCUMENT_DIR.mkdir(parents=True, exist_ok=True)
     with INDEX_LOCK:
         index = load_index()
-        available_names = {path.name for path in UPLOAD_DIR.iterdir() if path.is_file()}
+        source_folders = (("shared", SHARED_DOCUMENT_DIR), ("local", UPLOAD_DIR))
+        available_names = {
+            f"{source}/{path.name}"
+            for source, folder in source_folders
+            for path in folder.iterdir()
+            if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
+        }
         stale_names = set(index["documents"]) - available_names
         if stale_names:
             for name in stale_names:
                 index["documents"].pop(name, None)
             save_index(index)
-        for path in sorted(UPLOAD_DIR.iterdir(), key=lambda item: item.name.lower()):
-            if not path.is_file() or path.suffix.lower() not in SUPPORTED_EXTENSIONS:
-                continue
-            try:
-                digest = hashlib.sha256(path.read_bytes()).hexdigest()
-            except OSError as exc:
-                raise DocumentIndexError(f"Could not read {path.name}: {exc}") from exc
-            current = index["documents"].get(path.name)
-            if current and current.get("sha256") == digest and current.get("version") == INDEX_VERSION:
-                continue
-            try:
-                index["documents"][path.name] = prepare_index_record(path)
-                save_index(index)
-            except DocumentIndexError as exc:
-                raise DocumentIndexError(f"Could not index {path.name}: {exc}") from exc
+        for source, folder in source_folders:
+            for path in sorted(folder.iterdir(), key=lambda item: item.name.lower()):
+                if not path.is_file() or path.suffix.lower() not in SUPPORTED_EXTENSIONS:
+                    continue
+                key = f"{source}/{path.name}"
+                try:
+                    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                except OSError as exc:
+                    raise DocumentIndexError(f"Could not read {path.name}: {exc}") from exc
+                current = index["documents"].get(key)
+                if current and current.get("sha256") == digest and current.get("version") == INDEX_VERSION:
+                    continue
+                try:
+                    index["documents"][key] = prepare_index_record(path)
+                    save_index(index)
+                except DocumentIndexError as exc:
+                    raise DocumentIndexError(f"Could not index {path.name}: {exc}") from exc
 
 
 def retrieve_document_chunks(question, limit=RETRIEVAL_CHUNK_LIMIT, per_page=2):
     with INDEX_LOCK:
         index = load_index()
         chunks = [
-            (name, chunk)
-            for name, document in index["documents"].items()
+            (document.get("name", Path(key).name), chunk)
+            for key, document in index["documents"].items()
             for chunk in document.get("chunks", [])
         ]
     if not chunks:
@@ -285,8 +299,8 @@ def retrieve_document_chunks_for_queries(queries, limit=10, per_page=2):
     with INDEX_LOCK:
         index = load_index()
         chunks = [
-            (name, chunk)
-            for name, document in index["documents"].items()
+            (document.get("name", Path(key).name), chunk)
+            for key, document in index["documents"].items()
             for chunk in document.get("chunks", [])
         ]
     if not chunks or not queries:
@@ -391,11 +405,13 @@ def documents():
 @app.get("/documents/file/<path:filename>")
 def open_document(filename):
     safe_name = secure_filename(filename)
+    source = request.args.get("source", "local")
+    folder = SHARED_DOCUMENT_DIR if source == "shared" else UPLOAD_DIR if source == "local" else None
     if not safe_name or safe_name != filename or Path(safe_name).suffix.lower() not in SUPPORTED_EXTENSIONS:
         return render_documents(error="Invalid file name.", status=400)
-    if not (UPLOAD_DIR / safe_name).is_file():
+    if folder is None or not (folder / safe_name).is_file():
         return render_documents(error="That file could not be found.", status=404)
-    return send_from_directory(UPLOAD_DIR, safe_name, as_attachment=False)
+    return send_from_directory(folder, safe_name, as_attachment=False)
 
 
 @app.post("/documents/upload")
@@ -428,7 +444,7 @@ def upload_document():
                 return render_documents(error="The file is too large. Maximum file size is 50 MB.", status=413)
             index = load_index()
             record = prepare_index_record(destination)
-            index["documents"][filename] = record
+            index["documents"][f"local/{filename}"] = record
             save_index(index)
         except DocumentIndexError as exc:
             destination.unlink(missing_ok=True)
@@ -445,6 +461,8 @@ def upload_document():
 
 @app.post("/documents/delete/<path:filename>")
 def delete_document(filename):
+    if request.args.get("source", "local") != "local":
+        return render_documents(error="Shared reports cannot be deleted here.", status=403)
     safe_name = secure_filename(filename)
     if not safe_name or safe_name != filename:
         return render_documents(error="Invalid file name.", status=400)
@@ -455,7 +473,7 @@ def delete_document(filename):
         try:
             index = load_index()
             updated_index = json.loads(json.dumps(index))
-            updated_index["documents"].pop(safe_name, None)
+            updated_index["documents"].pop(f"local/{safe_name}", None)
             save_index(updated_index)
         except DocumentIndexError as exc:
             return render_documents(error=str(exc), status=500)
