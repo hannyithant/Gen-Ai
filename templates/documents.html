@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Document collection · Local Qwen Chat</title>
+  <title>Document collection · {{ app_name }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=2) }}">
 </head>
 <body>
   <main class="documents-shell">
     <header>
-      <div class="model-mark" aria-hidden="true">Q</div>
-      <div><h1>Document collection</h1><p>Upload and manage the files you want to keep with your collection.</p></div>
+      <div class="model-mark" aria-hidden="true">F</div>
+      <div><h1>{{ app_name }} · Document collection</h1><p>Upload job-market and future-of-work reports for skills guidance.</p></div>
       <span class="local-badge">LOCAL</span>
     </header>
     {% set active_page = "documents" %}{% include "_nav.html" %}

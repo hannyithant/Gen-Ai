@@ -5,12 +5,20 @@ const conversation = document.querySelector("#conversation");
 const chatNotice = document.querySelector("#chat-notice");
 const history = [];
 
+document.querySelectorAll(".example-question").forEach((button) => {
+  button.addEventListener("click", () => {
+    input.value = button.textContent;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.focus();
+  });
+});
+
 function addMessage(role, content, extraClass = "") {
   const row = document.createElement("article");
   row.className = `message ${role} ${extraClass}`;
   const label = document.createElement("div");
   label.className = "message-label";
-  label.textContent = role === "user" ? "You" : role === "error" ? "Connection issue" : "Qwen";
+  label.textContent = role === "user" ? "You" : role === "error" ? "Connection issue" : "Future Skills Advisor";
   const body = document.createElement("div");
   body.className = "message-body";
   if (role === "assistant") {
@@ -60,7 +68,7 @@ form.addEventListener("submit", async (event) => {
 
   const pending = document.createElement("article");
   pending.className = "message assistant pending";
-  pending.textContent = "Qwen is thinking…";
+  pending.textContent = "Future Skills Advisor is thinking…";
   conversation.append(pending);
   conversation.scrollTop = conversation.scrollHeight;
 
