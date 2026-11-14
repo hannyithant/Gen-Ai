@@ -129,9 +129,29 @@ header p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
 
 .welcome h2 { margin: 17px 0 7px; color: var(--ink); font-size: 23px; font-weight: 650; letter-spacing: -.6px; }
 .welcome p { margin: 0; font-size: 13px; }
-.example-questions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: 620px; margin-top: 20px; }
-.example-question { min-height: 36px; padding: 8px 12px; border: 1px solid #e4e2fb; border-radius: 18px; color: #6256c7; background: #fbfaff; font-size: 11px; font-weight: 550; }
-.example-question:hover { color: #fff; }
+.chat-controls { display: flex; justify-content: flex-end; padding: 9px 28px 0; }
+.start-over { min-height: 30px; padding: 0 11px; border: 1px solid #e4e2fb; color: #6256c7; background: #fff; font-size: 11px; }
+.start-over:hover { color: #fff; }
+.interview-area { flex: 0 0 auto; padding: 0 clamp(22px, 8vw, 84px) 14px; }
+.composer[hidden], .interview-area[hidden] { display: none; }
+.question-progress { margin: 0 0 10px; color: var(--muted); font-size: 11px; }
+.interview-question { max-width: 100%; margin-bottom: 10px; }
+.interview-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.option-button { min-height: 36px; padding: 7px 12px; border: 1px solid #dedaff; border-radius: 18px; color: #5548bc; background: #fbfaff; font-size: 12px; font-weight: 550; }
+.option-button:hover, .option-button.selected { color: #fff; background: var(--accent); }
+.other-answer { min-width: 180px; min-height: 36px; padding: 7px 11px; border: 1px solid #dfe2ed; border-radius: 10px; font: inherit; font-size: 12px; }
+.interview-controls { display: flex; gap: 8px; margin-top: 11px; }
+.interview-controls button, .recommend-now { min-height: 32px; padding: 0 11px; font-size: 11px; }
+.interview-controls .secondary-button { border: 1px solid #e5e7ef; color: #71778e; background: #fff; }
+.interview-controls .secondary-button:hover { color: var(--accent-dark); background: #f7f6ff; }
+.interview-controls .secondary-button:disabled { opacity: .45; cursor: default; }
+.recommend-now { margin-top: 9px; border: 1px solid #dedaff; color: #5548bc; background: #f7f6ff; }
+.recommend-now:hover { color: #fff; }
+.sources-used { margin-top: 8px; color: #777d94; font-size: 11px; }
+.sources-used summary { cursor: pointer; color: #5548bc; font-weight: 650; }
+.sources-used ul { padding-left: 20px; }
+.sources-used li { margin: 10px 0; }
+.sources-used p { margin: 4px 0 0; line-height: 1.5; }
 .message { max-width: 84%; margin: 0 0 23px; animation: appear .18s ease-out; }
 .message.user { margin-left: auto; }
 .message-label { margin: 0 0 7px; color: #858aa0; font-size: 11px; font-weight: 650; }
@@ -247,6 +267,8 @@ button:focus-visible, a:focus-visible, .file-picker:focus-within { outline: 3px 
   .model-mark { width: 38px; height: 38px; }
   header p { font-size: 11px; }
   .page-nav { padding: 10px 14px; }
+  .chat-controls { padding: 8px 17px 0; }
+  .interview-area { padding: 0 17px 12px; }
   .conversation { padding: 23px 17px; }
   .message { max-width: 94%; }
   .composer { margin: 0 12px; }

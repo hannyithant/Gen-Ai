@@ -1,43 +1,35 @@
-# Local Qwen Chat
+# Future Skills Advisor
 
-A small Flask app for chatting with Ollama's `qwen3:1.7b` model. The browser keeps conversation history while the page is open; Flask forwards each turn to Ollama without saving chat data. The **Document collection** page accepts PDF, DOCX, TXT, and Markdown files up to 50 MB. The app extracts text, splits it into 800-character chunks with 100-character overlap, and embeds each chunk using Ollama's `nomic-embed-text` model. Chunks and embeddings are stored locally in `index/index.json`.
+A small Flask app that interviews undergraduate students and recommends skill priorities using uploaded job-market and future-of-work reports. It has no university course information and never recommends specific courses, programs, or instructors.
 
-For each question, Flask embeds the question and retrieves up to five relevant document chunks. The model is instructed to use those excerpts first and call Ollama web search only when the documents do not answer the question or current external information is needed. Search results include a title, URL, and short content excerpt. If document retrieval or web search is unavailable, chat continues and displays a notice.
+The browser runs a multiple-choice interview from `questions.json`; editing the question wording, choices, and conditional behavior does not require changing Python code. No Ollama calls are made while students answer the interview. Students can skip questions or request a recommendation early. When the interview ends, the browser sends the selected answers to Flask, which retrieves report excerpts and asks Ollama to generate a personalized recommendation. The chat then continues as personalized Q&A grounded in the report collection.
 
 ## Requirements
 
 - Python 3.9 or newer
 - Ollama running at `http://localhost:11434`
-- An Ollama API key for web search, available from [Ollama](https://ollama.com/settings/keys)
-
-Each user must obtain and configure their own `OLLAMA_API_KEY` for web search. Keep the key private; do not commit it or add it to source files. The app can still chat and use uploaded documents when the key is missing, but web search will be unavailable.
+- `qwen3:1.7b` for recommendations and follow-up chat
+- `nomic-embed-text` for document indexing and retrieval
 
 ## Setup and run
 
-Install Ollama from <https://ollama.com/download>, then run these commands from the project folder:
+From the project folder:
 
 ```bash
 ollama pull qwen3:1.7b
 ollama pull nomic-embed-text
-pip install -r requirements.txt
-python3 app.py
-```
-
-Before starting the app, set your own key in the same terminal. On macOS or Linux:
-
-```bash
-export OLLAMA_API_KEY="your-ollama-api-key"
-```
-
-On Windows PowerShell:
-
-```powershell
-$env:OLLAMA_API_KEY = "your-ollama-api-key"
+python -m pip install -r requirements.txt
 python app.py
 ```
 
-On Windows, use `py app.py` if `python` is unavailable. The app reads the key in the Python backend and sends it to Ollama's web search endpoint. If the variable is missing, or search fails, chat continues and displays a notice.
+On Windows, use `py app.py` if `python` is unavailable. Open <http://127.0.0.1:5000>. Flask binds to loopback only.
 
-Open <http://127.0.0.1:5000> in your browser. Flask binds to loopback only. Start Ollama and pull both models before uploading documents. Uploads are stored in `uploads/`; the local index is `index/index.json`. Deleting a document also removes its indexed chunks. Press Enter to send or Shift+Enter for a new line.
+## Report collection
 
-On Windows, if `python` is not available, use the Python launcher as `py`.
+The **Document collection** page accepts PDF, DOCX, TXT, and Markdown files up to 50 MB. Text is split into 800-character chunks with 100-character overlap and embedded locally through Ollama. The index is stored in `index/index.json`; uploaded files are stored in `uploads/`.
+
+PDF chunks keep their page number for citations and the recommendation's **Sources used** disclosure. Other supported formats do not provide reliable page numbers, so citations identify the report without a page. Recommendations retrieve up to eight chunks, with at most two chunks from each numbered report page.
+
+Existing uploaded reports do not need to be uploaded again. The next document page visit or chat request automatically reindexes old entries to add page metadata. This requires Ollama and `nomic-embed-text` to be available; large collections may take time to reindex. Existing documents remain stored locally.
+
+The browser keeps the conversation and selected-answer profile for the current page session. Recommendation search uses up to three profile-based queries, removes duplicate chunks, limits numbered pages to two chunks, and sends up to ten excerpts to the chat model. No API key is required or stored by the app.

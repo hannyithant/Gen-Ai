@@ -14,11 +14,10 @@
       <span class="local-badge">LOCAL</span>
     </header>
     {% set active_page = "chat" %}{% include "_nav.html" %}
-    <p id="chat-notice" class="chat-notice" role="status" hidden></p>
-    <section id="conversation" class="conversation" aria-live="polite" aria-label="Conversation">
-      <div class="welcome"><span class="welcome-icon">✦</span><h2>Plan your future skills</h2><p>Explore what job-market and future-of-work reports say about emerging skills.</p><div class="example-questions" aria-label="Example questions"><button type="button" class="example-question">Which skills will matter most in the next 5 years?</button><button type="button" class="example-question">How is AI changing entry-level jobs?</button><button type="button" class="example-question">I study [field]. What skills should I prioritize?</button><button type="button" class="example-question">What skills are emerging in my field?</button></div></div>
-    </section>
-    <form id="chat-form" class="composer">
+    <div class="chat-controls"><button id="start-over" class="start-over" type="button">Start over</button></div>
+    <section id="conversation" class="conversation" aria-live="polite" aria-label="Conversation"></section>
+    <div id="interview-area" class="interview-area" hidden></div>
+    <form id="chat-form" class="composer" hidden>
       <label class="sr-only" for="message-input">Your message</label>
       <textarea id="message-input" rows="1" placeholder="Ask about skills and work trends…" required></textarea>
       <button id="send-button" type="submit" aria-label="Send message"><span>Send</span><span aria-hidden="true">↑</span></button>

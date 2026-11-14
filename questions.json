@@ -1,0 +1,60 @@
+[
+  {
+    "id": "field",
+    "text": "What is your field of study?",
+    "type": "single",
+    "options": ["Business/Economics", "Engineering", "Science/Math/Statistics", "Humanities/Communication", "Social Sciences", "Health", "Design/Creative", "Other"],
+    "allow_other": true
+  },
+  {
+    "id": "year",
+    "text": "What year of undergraduate study are you in?",
+    "type": "single",
+    "options": ["Year 1", "Year 2", "Year 3", "Year 4+"],
+    "allow_other": false
+  },
+  {
+    "id": "direction",
+    "text": "Which career directions interest you? Select up to 3, or choose Not sure yet.",
+    "type": "multi",
+    "options": ["Data & AI", "Software/Tech", "Business/Management", "Marketing/Communication", "Creative/Design", "Research/Academia", "Entrepreneurship", "Not sure yet"],
+    "allow_other": false,
+    "max_select": 3
+  },
+  {
+    "id": "activities",
+    "text": "Which activities do you enjoy? Select any that fit.",
+    "type": "multi",
+    "options": ["Analyzing data", "Building things", "Talking with people", "Creating content", "Solving puzzles", "Organizing projects"],
+    "allow_other": true,
+    "show_if": {"question": "direction", "includes": "Not sure yet"}
+  },
+  {
+    "id": "skills",
+    "text": "Which skills or experience do you already have? Select any that fit.",
+    "type": "multi",
+    "options": ["Programming", "Data analysis", "Writing/Presenting", "Design", "Languages", "Leadership/Teamwork", "Using AI tools", "None yet"],
+    "allow_other": true
+  },
+  {
+    "id": "time",
+    "text": "How much time could you spend learning each week?",
+    "type": "single",
+    "options": ["Under 2 hours", "2-5 hours", "5-10 hours", "10+ hours"],
+    "allow_other": false
+  },
+  {
+    "id": "learning_style",
+    "text": "How do you prefer to learn? Select any that fit.",
+    "type": "multi",
+    "options": ["Hands-on projects", "Videos/online lessons", "Reading", "With friends/study groups", "With a mentor"],
+    "allow_other": false
+  },
+  {
+    "id": "worry",
+    "text": "What is your biggest worry or goal about AI and the future of work?",
+    "type": "single",
+    "options": ["AI replacing jobs", "Not knowing which skills to build", "Lack of experience", "Too many options", "Keeping up with change"],
+    "allow_other": true
+  }
+]
