@@ -4,14 +4,33 @@ const sendButton = document.querySelector("#send-button");
 const conversation = document.querySelector("#conversation");
 const startOverButton = document.querySelector("#start-over");
 const interviewArea = document.querySelector("#interview-area");
+const storageKey = "future-skills-advisor-session-v1";
 const history = [];
+const transcript = [];
 let questions = [];
 let answers = {};
 let questionIndex = 0;
 let recommendationReady = false;
+let recommendationPending = false;
 let busy = false;
 
-function addMessage(role, content, extraClass = "", sources = [], questionId = null) {
+function saveState() {
+  try {
+    localStorage.setItem(storageKey, JSON.stringify({
+      answers,
+      questionIndex,
+      recommendationReady,
+      recommendationPending,
+      history,
+      transcript,
+      draft: input.value,
+    }));
+  } catch {
+    // The in-memory conversation remains usable if browser storage is unavailable.
+  }
+}
+
+function addMessage(role, content, extraClass = "", sources = [], questionId = null, persist = true) {
   const row = document.createElement("article");
   row.className = `message ${role} ${extraClass}`;
   if (questionId) row.dataset.questionId = questionId;
@@ -42,7 +61,26 @@ function addMessage(role, content, extraClass = "", sources = [], questionId = n
   }
   conversation.append(row);
   conversation.scrollTop = conversation.scrollHeight;
+  if (persist && extraClass !== "pending") {
+    transcript.push({ role, content, extraClass, sources, questionId });
+    saveState();
+  }
   return row;
+}
+
+function restoreState(saved) {
+  answers = saved.answers && typeof saved.answers === "object" ? saved.answers : {};
+  questionIndex = Number.isInteger(saved.questionIndex) ? saved.questionIndex : 0;
+  recommendationReady = saved.recommendationReady === true;
+  recommendationPending = saved.recommendationPending === true;
+  input.value = typeof saved.draft === "string" ? saved.draft : "";
+  if (Array.isArray(saved.history)) history.push(...saved.history);
+  if (Array.isArray(saved.transcript)) {
+    transcript.push(...saved.transcript);
+    for (const item of transcript) {
+      addMessage(item.role, item.content, item.extraClass || "", item.sources || [], item.questionId || null, false);
+    }
+  }
 }
 
 function visibleQuestions() {
@@ -114,6 +152,7 @@ function renderQuestion() {
         filtered.push(value ? `Other: ${value}` : "Other");
         answers[question.id] = filtered;
       }
+      saveState();
     });
   }
   const controls = document.createElement("div");
@@ -123,7 +162,7 @@ function renderQuestion() {
   back.className = "secondary-button";
   back.textContent = "Back";
   back.disabled = questionIndex === 0;
-  back.addEventListener("click", () => { questionIndex -= 1; renderQuestion(); });
+  back.addEventListener("click", () => { questionIndex -= 1; saveState(); renderQuestion(); });
   const skip = document.createElement("button");
   skip.type = "button";
   skip.className = "secondary-button";
@@ -177,6 +216,7 @@ function chooseOption(question, option) {
     selected.push(option);
   }
   answers[question.id] = selected;
+  saveState();
   renderQuestion();
 }
 
@@ -199,8 +239,12 @@ function commitAnswer(question, value) {
   if (currentIndex >= 0) questionIndex = currentIndex + 1;
   if (questionIndex >= visible.length) {
     interviewArea.hidden = true;
+    saveState();
     finishInterview();
-  } else renderQuestion();
+  } else {
+    saveState();
+    renderQuestion();
+  }
 }
 
 async function finishInterview() {
@@ -211,6 +255,8 @@ async function finishInterview() {
     addMessage("user", answerLabel(answers[activeQuestion.id]), "", [], activeQuestion.id);
   }
   busy = true;
+  recommendationPending = true;
+  saveState();
   startOverButton.disabled = true;
   interviewArea.hidden = true;
   const pending = addMessage("assistant", "Thinking...", "pending");
@@ -223,12 +269,14 @@ async function finishInterview() {
     const result = await response.json();
     pending.remove();
     if (!response.ok) throw new Error(result.error || "The recommendation could not be created.");
+    recommendationPending = false;
     recommendationReady = true;
-    addMessage("assistant", result.message.content, "recommendation", result.sources || []);
     history.push({ role: "assistant", content: result.message.content });
+    addMessage("assistant", result.message.content, "recommendation", result.sources || []);
     form.hidden = false;
   } catch (error) {
     pending.remove();
+    recommendationPending = false;
     addMessage("error", error.message || "Could not create the recommendation.", "error-message");
     interviewArea.hidden = false;
     renderQuestion();
@@ -249,6 +297,7 @@ form.addEventListener("submit", async (event) => {
   input.value = "";
   input.style.height = "auto";
   sendButton.disabled = true;
+  saveState();
   const pending = addMessage("assistant", "Thinking...", "pending");
   try {
     const response = await fetch("/api/chat", {
@@ -275,9 +324,18 @@ form.addEventListener("submit", async (event) => {
 startOverButton.addEventListener("click", () => {
   if (busy) return;
   history.length = 0;
+  transcript.length = 0;
   answers = {};
   questionIndex = 0;
   recommendationReady = false;
+  recommendationPending = false;
+  try {
+    localStorage.removeItem(storageKey);
+  } catch {
+    // Reset the in-memory session even when browser storage is unavailable.
+  }
+  input.value = "";
+  input.style.height = "auto";
   conversation.replaceChildren();
   interviewArea.replaceChildren();
   interviewArea.hidden = false;
@@ -289,6 +347,7 @@ startOverButton.addEventListener("click", () => {
 input.addEventListener("input", () => {
   input.style.height = "auto";
   input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
+  saveState();
 });
 input.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey) {
@@ -307,8 +366,30 @@ async function start() {
     if (!response.ok || !Array.isArray(result)) throw new Error(result.error || "Could not load interview questions.");
     questions = result;
     pending.remove();
-    addMessage("assistant", "Hello! I’ll ask a few quick questions to tailor skill recommendations to you.");
-    renderQuestion();
+    let saved = null;
+    try {
+      saved = JSON.parse(localStorage.getItem(storageKey) || "null");
+    } catch {
+      try {
+        localStorage.removeItem(storageKey);
+      } catch {
+        // Start a fresh in-memory interview when storage is unavailable.
+      }
+    }
+    if (saved && typeof saved === "object") {
+      restoreState(saved);
+      if (recommendationReady) {
+        interviewArea.hidden = true;
+        form.hidden = false;
+      } else {
+        interviewArea.hidden = false;
+        renderQuestion();
+        if (recommendationPending) await finishInterview();
+      }
+    } else {
+      addMessage("assistant", "Hello! I’ll ask a few quick questions to tailor skill recommendations to you.");
+      renderQuestion();
+    }
   } catch (error) {
     pending.remove();
     addMessage("error", error.message, "error-message");
