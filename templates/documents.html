@@ -27,6 +27,12 @@
         <p class="size-note">PDF, DOCX, TXT, or Markdown. Maximum size: 50 MB. Your uploads stay local to this app copy; shared reports are available to everyone using the repository version.</p>
       </section>
 
+      <section class="document-card sync-card">
+        <div class="files-heading"><div><h2>Repository shared documents</h2><p class="size-note">Files in <code>shared_documents/</code> are managed through the repository.</p></div><button id="sync-shared" type="button">Sync shared documents</button></div>
+        <p id="sync-status" class="sync-status" role="status" aria-live="polite"></p>
+        <ul id="sync-errors" class="sync-errors" hidden></ul>
+      </section>
+
       <section class="document-card files-card">
         <div class="files-heading"><h2>Available reports</h2><span>{{ files|length }} {% if files|length == 1 %}file{% else %}files{% endif %}</span></div>
         {% if files %}
@@ -34,13 +40,13 @@
             {% for file in files %}
               <li class="file-row">
                 <div class="file-icon" aria-hidden="true">▤</div>
-                <div class="file-details"><a class="file-name" href="{{ url_for('open_document', filename=file.name, source=file.source) }}" target="_blank" rel="noopener">{{ file.name }}</a><span class="file-size">{{ file.size }} · {% if file.source == 'shared' %}Shared report{% else %}Your upload{% endif %}</span><span class="file-size">{% if file.indexed %}Indexed · {{ file.chunk_count }} chunks{% else %}Not indexed{% endif %}</span></div>
+                <div class="file-details"><a class="file-name" href="{{ url_for('open_document', filename=file.name, source=file.source) }}" target="_blank" rel="noopener">{{ file.name }}</a><span class="file-size">{% if file.source == 'shared' %}<span class="shared-badge">Shared</span>{% else %}Your upload{% endif %} · {{ file.size }}</span><span class="file-size">{% if file.indexed %}Indexed · {{ file.chunk_count }} chunks{% else %}Not indexed{% endif %}</span></div>
                 {% if file.source == 'local' %}<form action="{{ url_for('delete_document', filename=file.name, source='local') }}" method="post" onsubmit="return confirm('Delete {{ file.name|e }}?')"><button class="delete-button" type="submit">Delete</button></form>{% endif %}
               </li>
             {% endfor %}
           </ul>
         {% else %}
-          <p class="empty-files">No files yet. Upload a document to start your collection.</p>
+          <p class="empty-files">No supported files yet. Add shared files to <code>shared_documents/</code> or upload a personal document.</p>
         {% endif %}
       </section>
     </div>
@@ -48,6 +54,71 @@
   <script>
     document.querySelector("#document-file").addEventListener("change", (event) => {
       document.querySelector("#file-name").textContent = event.target.files[0]?.name || "Choose a file";
+    });
+
+    const syncButton = document.querySelector("#sync-shared");
+    const syncStatus = document.querySelector("#sync-status");
+    const syncErrors = document.querySelector("#sync-errors");
+    let reloadOnCompletion = false;
+    let lastStatus = null;
+    let pollTimer = null;
+    function showSyncState(state) {
+      lastStatus = state;
+      syncButton.disabled = state.running;
+      syncErrors.replaceChildren();
+      if (state.running) {
+        syncStatus.textContent = state.total
+          ? `Indexing ${state.current || 1} of ${state.total}: ${state.filename || "preparing…"}`
+          : "Scanning shared documents…";
+      } else if (state.status === "complete") {
+        syncStatus.textContent = `Sync complete. Indexed ${state.indexed} new or changed; skipped ${state.skipped} unchanged; removed ${state.removed} missing.`;
+      } else if (state.status === "error") {
+        syncStatus.textContent = "Shared document sync stopped before it could finish.";
+      } else {
+        syncStatus.textContent = "";
+      }
+      for (const failure of state.errors || []) {
+        const item = document.createElement("li");
+        item.textContent = `${failure.filename}: ${failure.error}`;
+        syncErrors.append(item);
+      }
+      syncErrors.hidden = syncErrors.childElementCount === 0;
+      if (!state.running && pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+        if (reloadOnCompletion) window.location.reload();
+      }
+    }
+    async function pollSync() {
+      try {
+        const response = await fetch("{{ url_for('api_shared_sync_status') }}");
+        if (response.ok) showSyncState(await response.json());
+      } catch {
+        syncStatus.textContent = "Could not read shared document sync progress. Check that the app is still running.";
+      }
+    }
+    syncButton.addEventListener("click", async () => {
+      if (lastStatus?.running) return;
+      reloadOnCompletion = true;
+      syncButton.disabled = true;
+      syncStatus.textContent = "Starting shared document sync…";
+      try {
+        const response = await fetch("{{ url_for('api_start_shared_sync') }}", { method: "POST" });
+        const state = await response.json();
+        if (!response.ok) throw new Error(state.error || "Could not start sync.");
+        showSyncState(state);
+        if (state.running && !pollTimer) pollTimer = setInterval(pollSync, 1000);
+        else if (state.status === "complete" || state.status === "error") window.location.reload();
+      } catch (error) {
+        syncStatus.textContent = error.message;
+        syncButton.disabled = false;
+      }
+    });
+    pollSync().then(() => {
+      if (lastStatus?.running && !pollTimer) {
+        reloadOnCompletion = true;
+        pollTimer = setInterval(pollSync, 1000);
+      }
     });
   </script>
 </body>

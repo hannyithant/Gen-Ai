@@ -39,6 +39,11 @@ SHARED_DOCUMENT_DIR = PROJECT_DIR / "shared_documents"
 INDEX_DIR = PROJECT_DIR / "index"
 INDEX_PATH = INDEX_DIR / "index.json"
 INDEX_LOCK = threading.RLock()
+SYNC_STATE_LOCK = threading.Lock()
+SHARED_SYNC_STATE = {
+    "status": "idle", "running": False, "total": 0, "current": 0,
+    "filename": None, "indexed": 0, "skipped": 0, "removed": 0, "errors": [],
+}
 # Allow multipart overhead while keeping the actual file limit at 50 MiB.
 app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_SIZE + 1024 * 1024
 
@@ -97,7 +102,7 @@ def render_documents(success=None, error=None, status=200):
     files = []
     for source, folder in (("shared", SHARED_DOCUMENT_DIR), ("local", UPLOAD_DIR)):
         for path in folder.iterdir():
-            if path.is_file():
+            if path.is_file() and (source == "local" or path.suffix.lower() in SUPPORTED_EXTENSIONS):
                 size = path.stat().st_size
                 display_size = f"{size / (1024 * 1024):.1f} MB" if size >= 1024 * 1024 else f"{size / 1024:.1f} KB"
                 record = indexed_documents.get(f"{source}/{path.name}")
@@ -205,13 +210,13 @@ def create_embeddings(texts):
     return embeddings
 
 
-def prepare_index_record(path):
+def prepare_index_record(path, digest=None):
     pages = extract_document_pages(path)
     chunks = [(page_number, chunk) for page_number, text in pages for chunk in split_into_chunks(text)]
     if not chunks:
         raise DocumentIndexError("No readable text was found to index.")
     vectors = create_embeddings([chunk for _page, chunk in chunks])
-    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    digest = digest or hashlib.sha256(path.read_bytes()).hexdigest()
     return {
         "name": path.name,
         "sha256": digest,
@@ -220,40 +225,77 @@ def prepare_index_record(path):
     }
 
 
-def ensure_existing_documents_indexed():
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+def shared_sync_snapshot():
+    with SYNC_STATE_LOCK:
+        return json.loads(json.dumps(SHARED_SYNC_STATE))
+
+
+def sync_shared_documents():
     SHARED_DOCUMENT_DIR.mkdir(parents=True, exist_ok=True)
+    paths = sorted(
+        (path for path in SHARED_DOCUMENT_DIR.iterdir()
+         if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS),
+        key=lambda item: item.name.lower(),
+    )
+    keys = {f"shared/{path.name}" for path in paths}
     with INDEX_LOCK:
         index = load_index()
-        source_folders = (("shared", SHARED_DOCUMENT_DIR), ("local", UPLOAD_DIR))
-        available_names = {
-            f"{source}/{path.name}"
-            for source, folder in source_folders
-            for path in folder.iterdir()
-            if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
-        }
-        stale_names = set(index["documents"]) - available_names
-        if stale_names:
-            for name in stale_names:
-                index["documents"].pop(name, None)
+        stale_keys = [key for key in index["documents"] if key.startswith("shared/") and key not in keys]
+        for key in stale_keys:
+            index["documents"].pop(key, None)
+        if stale_keys:
             save_index(index)
-        for source, folder in source_folders:
-            for path in sorted(folder.iterdir(), key=lambda item: item.name.lower()):
-                if not path.is_file() or path.suffix.lower() not in SUPPORTED_EXTENSIONS:
-                    continue
-                key = f"{source}/{path.name}"
-                try:
-                    digest = hashlib.sha256(path.read_bytes()).hexdigest()
-                except OSError as exc:
-                    raise DocumentIndexError(f"Could not read {path.name}: {exc}") from exc
-                current = index["documents"].get(key)
-                if current and current.get("sha256") == digest and current.get("version") == INDEX_VERSION:
-                    continue
-                try:
-                    index["documents"][key] = prepare_index_record(path)
-                    save_index(index)
-                except DocumentIndexError as exc:
-                    raise DocumentIndexError(f"Could not index {path.name}: {exc}") from exc
+    with SYNC_STATE_LOCK:
+        SHARED_SYNC_STATE.update({"total": len(paths), "current": 0, "filename": None,
+                                  "indexed": 0, "skipped": 0, "removed": len(stale_keys), "errors": []})
+    for number, path in enumerate(paths, start=1):
+        with SYNC_STATE_LOCK:
+            SHARED_SYNC_STATE.update({"current": number, "filename": path.name})
+        key = f"shared/{path.name}"
+        try:
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            with INDEX_LOCK:
+                current = load_index()["documents"].get(key)
+            if current and current.get("sha256") == digest and current.get("version") == INDEX_VERSION:
+                with SYNC_STATE_LOCK:
+                    SHARED_SYNC_STATE["skipped"] += 1
+                continue
+            record = prepare_index_record(path, digest=digest)
+            with INDEX_LOCK:
+                index = load_index()
+                index["documents"][key] = record
+                save_index(index)
+            with SYNC_STATE_LOCK:
+                SHARED_SYNC_STATE["indexed"] += 1
+        except (OSError, DocumentIndexError) as exc:
+            message = str(exc)
+            if isinstance(exc, OSError):
+                message = f"Could not read {path.name}: {exc}"
+            with INDEX_LOCK:
+                index = load_index()
+                index["documents"].pop(key, None)
+                save_index(index)
+            with SYNC_STATE_LOCK:
+                SHARED_SYNC_STATE["errors"].append({"filename": path.name, "error": message})
+    with SYNC_STATE_LOCK:
+        SHARED_SYNC_STATE.update({"status": "complete", "running": False, "filename": None})
+
+
+def start_shared_sync():
+    with SYNC_STATE_LOCK:
+        if SHARED_SYNC_STATE["running"]:
+            return json.loads(json.dumps(SHARED_SYNC_STATE))
+        SHARED_SYNC_STATE.update({"status": "running", "running": True, "total": 0, "current": 0,
+                                  "filename": None, "indexed": 0, "skipped": 0, "removed": 0, "errors": []})
+    def worker():
+        try:
+            sync_shared_documents()
+        except Exception as exc:
+            with SYNC_STATE_LOCK:
+                SHARED_SYNC_STATE.update({"status": "error", "running": False, "filename": None,
+                                          "errors": SHARED_SYNC_STATE["errors"] + [{"filename": "shared_documents", "error": str(exc)}]})
+    threading.Thread(target=worker, name="shared-document-sync", daemon=True).start()
+    return shared_sync_snapshot()
 
 
 def retrieve_document_chunks(question, limit=RETRIEVAL_CHUNK_LIMIT, per_page=2):
@@ -395,11 +437,17 @@ def index():
 
 @app.get("/documents")
 def documents():
-    try:
-        ensure_existing_documents_indexed()
-    except DocumentIndexError as exc:
-        return render_documents(error=str(exc), status=503)
     return render_documents()
+
+
+@app.post("/api/shared-sync")
+def api_start_shared_sync():
+    return jsonify(shared_sync_snapshot() if shared_sync_snapshot()["running"] else start_shared_sync())
+
+
+@app.get("/api/shared-sync/status")
+def api_shared_sync_status():
+    return jsonify(shared_sync_snapshot())
 
 
 @app.get("/documents/file/<path:filename>")
@@ -511,7 +559,8 @@ def recommend():
         return jsonify(error="Send a valid student profile."), 400
     profile = clean_profile(data.get("profile"))
     try:
-        ensure_existing_documents_indexed()
+        if shared_sync_snapshot()["running"]:
+            return jsonify(error="Shared reports are still syncing. Wait for the document sync to finish, then try again."), 503
         index = load_index()
         if not any(document.get("chunks") for document in index["documents"].values()):
             return jsonify(error="There are no reports in the document collection yet. Add and index reports, then request your recommendation."), 409
@@ -572,7 +621,8 @@ def chat():
     query_parts = [f"Student profile: {json.dumps(profile, ensure_ascii=False)}"]
     query_parts.append(f"Student question: {clean_messages[-1]['content']}")
     try:
-        ensure_existing_documents_indexed()
+        if shared_sync_snapshot()["running"]:
+            return jsonify(error="Shared reports are still syncing. Wait for the document sync to finish, then try again."), 503
         index = load_index()
         if not any(document.get("chunks") for document in index["documents"].values()):
             answer = "There are no reports in the document collection yet, so I cannot answer from the job-market evidence. Please add reports in Document collection."
@@ -604,5 +654,6 @@ def chat():
 
 
 if __name__ == "__main__":
+    start_shared_sync()
     app.run(host="127.0.0.1", port=5000, debug=False)
 
